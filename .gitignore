@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.env
+spendpilot.db
+spendpilot.db-*
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+.env.*
+!.env.example

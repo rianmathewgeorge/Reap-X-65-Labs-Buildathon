@@ -1,0 +1,5 @@
+{
+  "id": "checkout_sanitized",
+  "status": "REQUIRES_ACTION",
+  "nextAction": {"url": "https://hosted.example.test/approval/redacted"}
+}

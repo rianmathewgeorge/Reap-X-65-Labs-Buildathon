@@ -1,0 +1,11 @@
+{
+  "id": "quote_sanitized",
+  "shippingOptions": [{"id": "ship_free", "name": "Free shipping", "selected": true, "price": {"amount": 0, "currency": "SGD"}}],
+  "amountBreakdown": {
+    "itemsSubtotal": {"amount": "59.99", "currency": "SGD"},
+    "shipping": {"amount": 0, "currency": "SGD"},
+    "tax": {"amount": {"amount": 0, "currency": "SGD"}},
+    "finalAmount": {"amount": "59.99", "currency": "SGD"}
+  },
+  "expiresAt": "2030-01-01T00:00:00Z"
+}
