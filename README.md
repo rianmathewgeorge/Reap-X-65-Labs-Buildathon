@@ -60,9 +60,16 @@ SPENDPILOT_ORIGIN=http://127.0.0.1:8000 .venv/bin/python -m scripts.callback_rel
 
 Use the host shown by `cloudflared` in both commands and in `REAP_RETURN_URL`. Quick tunnel URLs are ephemeral, and the browser that completes approval must be able to reach the same machine running the local app. The relay only accepts that `Host` header, forwards one opaque checkout `state` to the local `/payment/return` route, and discards all other provider parameters. It also accepts `/enrollment/return` and redirects locally without provider parameters. Use `https://YOUR_TUNNEL_HOST/enrollment/return` only when creating an external enrollment.
 
+Keep those values in ignored `.env`, quote values with spaces such as `REAP_MERCHANT_KEY='UGREEN SG'`, then load them into the current shell before starting the app:
+
+```sh
+set -a; source .env; set +a
+SPENDPILOT_DB_PATH=spendpilot-live-new.db .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log --no-proxy-headers
+```
+
 If the Reap adapter or any required live setting is absent, live discovery fails closed. No fixture fallback is used for a live request. The optional OpenAI intent call is used only when `OPENAI_API_KEY` works; it may produce a restricted USB-C-hub search query, never merchant, budget, enrollment, quantity, or checkout authority. An invalid or unavailable model response uses the visibly labelled rule-based fallback.
 
-For a shipping-required live candidate, configure `SPENDPILOT_SHIPPING_ADDRESS_JSON` as a trusted synthetic JSON address. It is used only for quote creation and is not stored in the purchase record, events, Passport, or browser.
+For a live candidate where Reap says shipping is required or leaves that metadata unknown, configure `SPENDPILOT_SHIPPING_ADDRESS_JSON` as a trusted synthetic JSON address. Use Reap's documented `firstName`, `lastName`, `phone`, `addressLine1`, `city`, and `country` fields. It is used only for quote creation and is not stored in the purchase record, events, Passport, or browser. Provider acceptance of that address remains a separate quote-eligibility check; an active enrollment does not establish it. A rejected address requires organiser-provided sandbox values and creates no checkout.
 
 ## Checkout evidence and limits
 
@@ -73,9 +80,9 @@ For a shipping-required live candidate, configure `SPENDPILOT_SHIPPING_ADDRESS_J
 
 The adapter currently uses Reap's exact returned merchant name as `merchant_key` when no stable merchant identifier is present. This is a weaker identity signal, so `REAP_MERCHANT_KEY` must be the exact canonical name confirmed by the sandbox record.
 
-Live readiness requires confirmed sandbox credentials, host/version, enrollment, canonical merchant mapping, and the HTTPS relay described above. Do not claim sandbox search, checkout, or completion until Reap responses confirm them.
+Live readiness requires confirmed sandbox credentials, host/version, canonical merchant mapping, the HTTPS relay described above, and a provider response showing that the configured enrollment ID is `ACTIVE` for the exact configured owner ID. Until that provider check passes, catalog search, quote creation, and checkout remain disabled. Do not claim sandbox search, checkout, or completion until Reap responses confirm them.
 
-Each mode uses a separate database by default (`spendpilot-live.db` and `spendpilot-policy_test.db`). `SPENDPILOT_DB_PATH` may select another file. A changed trusted configuration requires a separate database and explicit new confirmation; never discard an existing live database to recover an uncertain checkout. Inspect retained attempts and use the same persisted operation/key only after Reap's retry protocol is confirmed. Fixture catalogs exist only in process memory; after restart, create a new fixture request rather than reusing an old quote.
+Each mode uses a separate database by default (`spendpilot-live.db` and `spendpilot-policy_test.db`). `SPENDPILOT_DB_PATH` may select another file. For a fresh live configuration, set a new database path such as `spendpilot-live-new.db`; never discard an existing live database to recover an uncertain checkout. Inspect retained attempts and use the same persisted operation/key only after Reap's retry protocol is confirmed. Fixture catalogs exist only in process memory; after restart, create a new fixture request rather than reusing an old quote.
 
 The optional model receives only allowlisted procurement keywords, not raw user prose or private payment data. The displayed tool events report whether OpenAI ran or rule-based fallback was used. Missing hosted approval on an initial live checkout suspends new purchases until the organiser clarifies behavior.
 

@@ -11,6 +11,7 @@ import httpx
 from pydantic import ValidationError
 
 from app.models import RestrictedIntent
+from app.reap_client import ReapAPIError
 
 
 class DiscoveryError(ValueError):
@@ -158,6 +159,18 @@ def _is_approved_type(candidate: dict[str, Any], scope: dict[str, Any]) -> bool:
     return isinstance(name, str) and "hub" in name.lower() and "usb" in name.lower()
 
 
+def _shipping_address_rejected(error: ReapAPIError) -> bool:
+    if error.status != 400 or error.code != "AGENTIC_REQUEST_REJECTED" or not isinstance(error.detail, dict):
+        return False
+    errors = error.detail.get("errors")
+    return isinstance(errors, list) and any(
+        isinstance(item, dict)
+        and isinstance(item.get("field"), str)
+        and (item["field"] == "shippingAddress" or item["field"].startswith("shippingAddress."))
+        for item in errors
+    )
+
+
 async def discover(adapter: Any, scope: dict[str, Any], text: str, request_id: str) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, str]]]:
     """Only a narrowed search query may come from the optional model; authority stays server-side."""
     events: list[dict[str, str]] = []
@@ -166,6 +179,8 @@ async def discover(adapter: Any, scope: dict[str, Any], text: str, request_id: s
             query = await _interpret_request(text, scope, events)
         except ValueError:
             raise DiscoveryError("request is outside the trusted single USB-C hub scope", events)
+        if not isinstance(adapter, FakeReapAdapter):
+            query = f"{scope['merchant_key']} {query}"
         events.append({"tool": "search_products", "status": "started"})
         candidates = await adapter.search_products(query, scope["market"], scope["currency"])
         events[-1]["status"] = "executed"
@@ -179,11 +194,20 @@ async def discover(adapter: Any, scope: dict[str, Any], text: str, request_id: s
             raise DiscoveryError("product details did not verify the selected product, merchant, availability, and variant", events)
         if not _is_approved_type(detail, scope):
             raise DiscoveryError("product type is not an approved USB-C hub", events)
-        shipping = _shipping_address() if detail.get("requires_shipping") is True else None
-        if detail.get("requires_shipping") is True and shipping is None:
-            raise DiscoveryError("shipping is required but no trusted synthetic address is configured", events)
+        shipping_required = detail.get("requires_shipping") is True or (
+            detail.get("requires_shipping") is None and not isinstance(adapter, FakeReapAdapter)
+        )
+        shipping = _shipping_address() if shipping_required else None
+        if shipping_required and shipping is None:
+            raise DiscoveryError("shipping may be required; configure a trusted synthetic shipping address before quote creation", events)
         events.append({"tool": "create_quote", "status": "started"})
-        quote = safe_quote(await adapter.create_quote(detail["variant_id"], scope["permitted_quantity"], f"demo+{request_id}@harbour-studio.invalid", shipping, str(uuid.uuid4())))
+        try:
+            quote = safe_quote(await adapter.create_quote(detail["variant_id"], scope["permitted_quantity"], f"demo+{request_id}@harbour-studio.invalid", shipping, str(uuid.uuid4())))
+        except ReapAPIError as error:
+            events[-1]["status"] = "failed"
+            if _shipping_address_rejected(error):
+                raise DiscoveryError("Reap rejected the configured shipping address; use organiser-provided sandbox shipping values before creating a new quote. No checkout was called.", events) from error
+            raise
         events[-1]["status"] = "executed"
         return detail, quote, events
     except DiscoveryError:

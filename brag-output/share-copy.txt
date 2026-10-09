@@ -1,0 +1,1 @@
+SpendPilot turns one equipment request into an inspectable quote, server-enforced spending checks, and a decision you approve. Built for the Reap × 65labs sandbox demo. Simulated fixture data; no live payment is claimed.

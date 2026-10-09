@@ -12,7 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.agent import FakeReapAdapter, discover, safe_candidate, safe_quote
+from app.agent import DiscoveryError, FakeReapAdapter, discover, safe_candidate, safe_quote
 from app.models import CheckoutInput, PolicyTestOutcomeInput, RequestInput
 from app.passport import project_passport
 from app.policy import evaluate_purchase
@@ -52,6 +52,15 @@ def _live_adapter() -> Any | None:
     except ImportError:
         return None
     return ReapAdapter()
+
+
+def _is_active_trusted_enrollment(scope: dict[str, Any], enrollment: Any) -> bool:
+    return (
+        isinstance(enrollment, dict)
+        and enrollment.get("status") == "ACTIVE"
+        and enrollment.get("owner_id") == scope["trusted_owner_id"]
+        and enrollment.get("enrollment_id") == scope["enrollment_id"]
+    )
 
 
 def _local_payment_return_url(value: str, origin: str) -> bool:
@@ -163,8 +172,12 @@ def create_app(*, storage_path: str | None = None, adapter: Any | None = None, m
     @app.get("/api/scope")
     async def scope() -> dict[str, Any]:
         config = storage.scope()
+        try:
+            enrollment = await reap.get_enrollment(config["enrollment_id"]) if reap is not None else None
+        except Exception:
+            enrollment = None
         return {**{key: config[key] for key in ("business_label", "currency", "market", "merchant_key", "approved_product_type", "permitted_quantity", "per_checkout_cap_minor")},
-                "budget": storage.budget_snapshot(), "enrollment_ready": reap is not None, "mode": selected_mode,
+                "budget": storage.budget_snapshot(), "enrollment_ready": _is_active_trusted_enrollment(config, enrollment), "mode": selected_mode,
                 "agent_mode": "OPENAI AVAILABLE" if os.getenv("OPENAI_API_KEY") else "RULE-BASED DEMO INPUT",
                 "scope_confirmed": bool(config["confirmed_at"]), "suspended": bool(config["suspended"])}
 
@@ -187,12 +200,21 @@ def create_app(*, storage_path: str | None = None, adapter: Any | None = None, m
             raise HTTPException(409, "a checkout attempt already exists for this request")
         source = "REAP_RESPONSE" if selected_mode == "live" else "POLICY_TEST"
         try:
-            candidate, quote, tools = await discover(reap, storage.scope(), record["user_text"], request_id)
+            config = storage.scope()
+            tools = [{"tool": "get_enrollment", "status": "started"}]
+            try:
+                enrollment = await reap.get_enrollment(config["enrollment_id"])
+                tools[-1]["status"] = "executed"
+            except Exception:
+                tools[-1]["status"] = "failed"
+                enrollment = None
+            if not _is_active_trusted_enrollment(config, enrollment):
+                raise DiscoveryError("an ACTIVE Reap enrollment for the configured trusted owner is required before catalog search; no checkout called", tools)
+            candidate, quote, discovery_tools = await discover(reap, config, record["user_text"], request_id)
+            tools.extend(discovery_tools)
             storage.save_discovery(request_id, candidate, quote, selected_mode)
-            enrollment = await reap.get_enrollment(storage.scope()["enrollment_id"])
-            tools.append({"tool": "get_enrollment", "status": "executed"})
             updated = storage.request(request_id)
-            decision = evaluate_purchase(storage.scope(), candidate, quote, storage.budget_snapshot(), enrollment, mode=selected_mode, request=updated)
+            decision = evaluate_purchase(config, candidate, quote, storage.budget_snapshot(), enrollment, mode=selected_mode, request=updated)
             storage.add_event(request_id, source, "discovery", {"candidate": safe_candidate(candidate), "quote": safe_quote(quote), "tools": tools})
             storage.add_event(request_id, "APP_POLICY", "discovery_evaluated", {"allowed": decision.allowed, "rules": decision.rules})
             if not decision.allowed:
@@ -206,8 +228,9 @@ def create_app(*, storage_path: str | None = None, adapter: Any | None = None, m
             tools = getattr(error, "events", [])
             storage.mark_blocked(request_id, detail)
             storage.add_event(request_id, source if selected_mode == "policy_test" else "APP_POLICY", "discovery_stopped", {"tools": tools, "detail": detail})
+            rule = "active_trusted_enrollment" if detail.startswith("an ACTIVE Reap enrollment") else "verified_discovery"
             return {"state": "BLOCKED", "candidate": None, "quote": None,
-                    "rule_results": [{"rule": "verified_discovery", "outcome": "FAIL", "detail": detail, "source": "APP_POLICY"}],
+                    "rule_results": [{"rule": rule, "outcome": "FAIL", "detail": detail, "source": "APP_POLICY"}],
                     "tool_events": tools, "checkout_created": False, "fixture_notice": "POLICY TEST - NOT LIVE REAP" if selected_mode == "policy_test" else None}
 
     @app.post("/api/requests/{request_id}/checkout")

@@ -89,6 +89,11 @@ test('readiness failure cannot be bypassed by checking confirmation', async () =
   }
 });
 
+test('live readiness names the active enrollment confirmation that is missing', async () => {
+  const {nodes} = await boot({readyScope: {...scope, mode: 'live', enrollment_ready: false}});
+  assert.match(nodes['request-status'].textContent, /ACTIVE enrollment.*configured owner/i);
+});
+
 test('discovery network errors remain visible with a saved recoverable request', async () => {
   const {nodes, calls} = await boot({failDiscovery: true});
   nodes['scope-confirm'].checked = true; nodes.request.value = 'Find one USB-C hub';

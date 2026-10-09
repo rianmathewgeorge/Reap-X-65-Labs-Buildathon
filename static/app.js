@@ -284,7 +284,7 @@ function renderScope(value) {
   $("budget-note").textContent = value.suspended ? "Purchases are suspended while the current record is reviewed." : `S$${((total || 0) / 100).toFixed(2)} total run limit`;
   $("mode").textContent = value.mode === "policy_test" ? "Policy test · not live Reap" : "Live Reap sandbox";
   $("demo-hint").classList.toggle("hidden", value.mode !== "policy_test");
-  if (!value.enrollment_ready) $("request-status").textContent = "Reap setup is not ready yet. Quote search will be available after integration.";
+  if (!value.enrollment_ready) $("request-status").textContent = "Reap has not confirmed an ACTIVE enrollment for the configured owner. Quotes and checkout are disabled.";
   syncControls();
 }
 
