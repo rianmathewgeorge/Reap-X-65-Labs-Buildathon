@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SpendPilot</title><link rel="stylesheet" href="/static/style.css"></head>
+<body>
+  <main>
+    <header><div><p class="eyebrow">HARBOUR STUDIO <span>SANDBOX</span></p><h1>SpendPilot <small>Equip a new teammate</small></h1></div><p id="mode" class="mode">Checking readiness…</p></header>
+    <section class="scope" aria-labelledby="scope-title"><div><p class="eyebrow">Stage A</p><h2 id="scope-title">Confirm the trusted scope</h2><p>One server-approved item only. The browser cannot set merchant, enrollment, quote, budget, or checkout URL.</p></div><dl><div><dt>Per checkout</dt><dd id="per-checkout">Loading…</dd></div><div><dt>Run budget left</dt><dd id="run-budget">Loading…</dd></div><div><dt>Merchant</dt><dd id="merchant">Loading…</dd></div><div><dt>Market</dt><dd id="market">Loading…</dd></div></dl></section>
+    <section class="card" aria-labelledby="request-title"><p class="eyebrow">Start a run</p><h2 id="request-title">Ask for the approved item</h2><label for="request">Procurement request</label><textarea id="request" rows="4">Find one approved USB-C hub for our new employee, within S$100 total including delivery. Show me the quote before checkout.</textarea><label class="check"><input id="scope-confirm" type="checkbox"> I confirm the displayed trusted scope for this run.</label><button id="start" disabled>Start policy check</button><p id="request-status" class="status" aria-live="polite"></p></section>
+    <section id="discovery" class="card hidden" aria-labelledby="discover-title"><p class="eyebrow">Stage B</p><h2 id="discover-title">Agent search and approval</h2><div id="tools" class="tools"></div><div id="quote"></div><div id="rules"></div><button id="checkout" class="accent hidden">Prepare checkout &amp; review on Reap</button><button id="refresh" class="secondary hidden">Refresh Reap status</button><p id="checkout-status" class="status" aria-live="polite"></p></section>
+    <section id="passport" class="card hidden" aria-labelledby="passport-title"><p class="eyebrow">Stage C</p><h2 id="passport-title">Purchase Decision Passport</h2><ol id="timeline"></ol></section>
+    <section class="card demo"><h2>Blocked-purchase demonstration</h2><p>In policy-test mode, request <q>two USB-C hubs</q>. The server blocks it before checkout and the Passport labels the fixture evidence <code>POLICY_TEST</code>.</p></section>
+  </main><script src="/static/app.js"></script>
+</body></html>

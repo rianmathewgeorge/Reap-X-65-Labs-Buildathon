@@ -1,0 +1,22 @@
+{
+  "mode": "POLICY TEST - NOT LIVE REAP",
+  "requests": [
+    {
+      "request_id": "c933632f-014b-4f40-b0af-9b0b0e7a7d8a",
+      "state": "REQUIRES_ACTION"
+    },
+    {
+      "request_id": "72386d02-35bc-4be4-a1e3-edafa59c06a7",
+      "state": "BLOCKED"
+    }
+  ],
+  "attempts": [
+    {
+      "request_id": "c933632f-014b-4f40-b0af-9b0b0e7a7d8a",
+      "checkout_status": "REQUIRES_ACTION",
+      "settlement_state": "HELD",
+      "reserved_minor": 7290
+    }
+  ],
+  "blocked_request_attempt_count": 0
+}
