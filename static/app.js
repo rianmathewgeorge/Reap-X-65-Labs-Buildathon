@@ -208,6 +208,41 @@ function renderRecord(record, options = {}) {
   syncControls();
 }
 
+function auditSummary(event) {
+  const data = event.payload || {};
+  switch (event.event_type) {
+    case "scope_confirmed":
+      return `You confirmed ${data.permitted_quantity || "the approved quantity of"} ${data.approved_product_type || "approved item"} for ${data.business_label || "your team"}. The limit is ${money(data.per_checkout_cap_minor)} per purchase and ${money(data.total_budget_minor)} for the run.`;
+    case "discovery":
+      return `${data.candidate?.name || "An item"} was found from ${data.candidate?.merchant_name || "the selected merchant"}. Quoted total: ${money(data.quote?.total_minor)}. ${data.quote?.shipping_minor == null || data.quote?.tax_minor == null ? "Delivery or tax details were not provided." : "Delivery and tax details are available in the quote."}`;
+    case "discovery_evaluated":
+    case "checkout_evaluated":
+    case "checkout_blocked": {
+      const rules = data.rules || [];
+      const passed = rules.filter(rule => rule.outcome === "PASS").length;
+      const needsReview = rules.filter(rule => rule.outcome !== "PASS").map(rule => ruleNames[rule.rule] || "A required check");
+      return `${passed} of ${rules.length} spending checks passed. ${data.allowed === true ? "You can choose whether to prepare checkout; your approval is still required." : `The purchase cannot proceed. Needs attention: ${needsReview.join(", ") || "the required spending checks"}.`}`;
+    }
+    case "quote_refreshed": return `The quote was checked again. Current total: ${money(data.total_minor)}. Valid until ${time(data.expires_at)}.`;
+    case "budget_reserved": return `${money(data.reserved_minor)} is held from your run budget while the checkout is pending. This hold does not confirm payment.`;
+    case "checkout_response":
+    case "checkout_status_refreshed":
+      if (event.source === "POLICY_TEST") return "This is a test checkout record. No real payment or hosted approval was created.";
+      if (data.status === "COMPLETED") return `Reap reports the sandbox checkout is complete. ${data.currency === "SGD" && Number.isInteger(data.final_amount_minor) && data.final_amount_minor > 0 ? `Reported amount: ${money(data.final_amount_minor)}.` : "The final charged amount still needs verification."}`;
+      return {REQUIRES_ACTION: "Reap is waiting for your approval. Payment is not confirmed.", PROCESSING: "Reap is processing the checkout. Payment is not yet confirmed.", FAILED: "Reap reports that the checkout failed.", EXPIRED: "Reap reports that the checkout expired."}[data.status] || "The checkout outcome is not confirmed. Keep the budget hold in place and check the status before trying again.";
+    case "blocked":
+    case "discovery_stopped": return "The request could not be verified against the approved purchase scope. Quote preparation stopped before checkout.";
+    case "quote_changed": return "The quote changed. Review the updated quote before preparing checkout.";
+    case "checkout_outcome_unknown": return "The checkout may have been submitted, but its result is not known. Your budget remains held. Do not start another checkout.";
+    case "settlement_unverified": return "Reap reported completion, but the charged amount is not verified. Your budget remains held and new purchases are paused.";
+    case "settlement_discrepancy": return `The reported amount (${money(data.final_amount_minor)}) differs from the amount held (${money(data.reserved_minor)}). New purchases are paused for review.`;
+    case "hosted_approval_unverified": return "Reap did not provide a hosted approval link. New purchases are paused until the approval process is clarified.";
+    case "status_lookup_unavailable": return "The latest payment status could not be checked. The previous status and budget hold have been kept.";
+    case "checkout_identity_discrepancy": return "The payment response could not be matched to this checkout. Keep the budget hold in place while the record is reviewed.";
+    default: return "An update was recorded for this purchase. Further detail is available in Recorded JSON.";
+  }
+}
+
 async function showPassport(id = requestId) {
   if (!id) return;
   const passport = await api(`/api/requests/${id}/passport`);
@@ -215,8 +250,8 @@ async function showPassport(id = requestId) {
   const timeline = $("timeline"); clear(timeline); $("passport").classList.remove("hidden");
   if (passport.fixture_notice) timeline.append(text("li", passport.fixture_notice, "fixture-label"));
   passport.events.forEach((event) => {
-    const item = document.createElement("li"); item.append(text("span", event.source || "APP_POLICY", "evidence-source"), text("strong", eventNames[event.event_type] || String(event.event_type || "Recorded event").replaceAll("_", " ")), text("small", time(event.created_at)));
-    if (event.payload && typeof event.payload === "object") { const details = document.createElement("details"); details.append(text("summary", "View recorded evidence"), text("pre", JSON.stringify(event.payload, null, 2))); item.append(details); }
+    const source = {USER_SCOPE: "Your confirmation", REAP_RESPONSE: "Reap response", APP_POLICY: "Spending checks", POLICY_TEST: "Test data · no payment"}[event.source] || "Purchase record";
+    const item = document.createElement("li"); item.append(text("span", source, "evidence-source"), text("strong", eventNames[event.event_type] || "Purchase record updated"), text("small", time(event.created_at)), text("p", auditSummary(event), "event-summary"));
     timeline.append(item);
   });
   $("passport-json").textContent = JSON.stringify({request_id: passport.request_id, state: passport.state, mode: passport.mode, fixture_notice: passport.fixture_notice, events: passport.events}, null, 2);

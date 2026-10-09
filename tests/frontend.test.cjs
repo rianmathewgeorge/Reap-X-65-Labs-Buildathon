@@ -26,7 +26,7 @@ class Element {
   focus() { this.focused = true; }
 }
 
-async function boot({record, readyScope = scope, failScope = false, failDiscovery = false} = {}) {
+async function boot({record, readyScope = scope, failScope = false, failDiscovery = false, passport = {events: [], fixture_notice: 'POLICY TEST'}} = {}) {
   const nodes = Object.fromEntries(ids.map(name => [name, new Element()]));
   const rail = Array.from({length: 4}, () => new Element());
   const location = new URL(`http://127.0.0.1:8000/${record ? `?request_id=${id}` : ''}`);
@@ -38,7 +38,7 @@ async function boot({record, readyScope = scope, failScope = false, failDiscover
     fetch: async (path, options = {}) => {
       calls.push({path, method: options.method || 'GET'});
       if (path === '/api/scope') { if (failScope) throw new Error('network unavailable'); return {ok: true, json: async () => readyScope}; }
-      if (path.endsWith('/passport')) return {ok: true, json: async () => ({events: [], fixture_notice: 'POLICY TEST'})};
+      if (path.endsWith('/passport')) return {ok: true, json: async () => passport};
       if (path.endsWith('/discover') && failDiscovery) throw new Error('network unavailable');
       if (path === '/api/requests') return {ok: true, json: async () => ({request_id: id, state: 'DRAFT'})};
       return {ok: true, json: async () => record};
@@ -144,4 +144,28 @@ test('quote leaves missing quote metadata visibly unknown', async () => {
   assert.match(nodes.quote.textContent, /Delivery:\s+Unknown/);
   assert.match(nodes.quote.textContent, /Tax:\s+Unknown/);
   assert.match(nodes.quote.textContent, /remain unverified/);
+});
+
+test('audit timeline explains purchases without JSON and preserves the technical view', async () => {
+  const passport = {mode: 'policy_test', events: [
+    {source: 'USER_SCOPE', event_type: 'scope_confirmed', payload: {permitted_quantity: 1, approved_product_type: 'USB-C hub', business_label: 'Harbour Studio', per_checkout_cap_minor: 10000, total_budget_minor: 20000}},
+    {source: 'POLICY_TEST', event_type: 'discovery', payload: {candidate: {name: 'USB-C Hub', merchant_name: 'Fixture Merchant'}, quote: {total_minor: 7290}}},
+    {source: 'APP_POLICY', event_type: 'budget_reserved', payload: {reserved_minor: 7290}}
+  ]};
+  const {nodes} = await boot({record: quoted(), passport});
+  assert.match(nodes.timeline.textContent, /You confirmed 1 USB-C hub for Harbour Studio/);
+  assert.match(nodes.timeline.textContent, /Quoted total: S\$72\.90/);
+  assert.match(nodes.timeline.textContent, /Delivery or tax details were not provided/);
+  assert.match(nodes.timeline.textContent, /hold does not confirm payment/);
+  assert.doesNotMatch(nodes.timeline.textContent, /reserved_minor|per_checkout_cap_minor|\{|View recorded evidence/);
+  assert.deepEqual(JSON.parse(nodes['passport-json'].textContent).events, passport.events);
+});
+
+test('audit summaries distinguish test results, unknown payments, and failed checks', async () => {
+  const {context} = await boot();
+  const summarize = event => context.auditSummary(event);
+  assert.match(summarize({source: 'POLICY_TEST', event_type: 'checkout_response', payload: {status: 'COMPLETED'}}), /No real payment/);
+  assert.match(summarize({event_type: 'checkout_outcome_unknown'}), /Do not start another checkout/);
+  assert.match(summarize({event_type: 'settlement_unverified'}), /budget remains held/);
+  assert.match(summarize({event_type: 'checkout_evaluated', payload: {allowed: false, rules: [{rule: 'run_budget', outcome: 'UNKNOWN'}]}}), /0 of 1 spending checks passed.*cannot proceed.*Within remaining budget/);
 });

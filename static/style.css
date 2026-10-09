@@ -902,6 +902,12 @@ dd{
 .timeline strong{
   font-size:10px
 }
+.timeline .event-summary{
+  margin:8px 0 0;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.6
+}
 .timeline small{
   display:block;
   margin-top:2px;
