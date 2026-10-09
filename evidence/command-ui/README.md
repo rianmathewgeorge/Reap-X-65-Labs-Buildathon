@@ -16,3 +16,5 @@ Validation on 9 October 2026:
 Unsupported claims from the static mock (cryptographic verification, included GST, verified hardware specifications, and card-engine status) are replaced by actual returned data and explicit unknowns. No genuine Reap sandbox payment is claimed by this validation.
 
 Audit timeline readability follow-up: timeline events now show plain-language summaries and friendly source labels instead of expandable JSON. The separate Recorded JSON view retains the safe event data. Verified the saved request in the browser without initiating checkout; both views worked and console warning/error logs were empty. `readable-passport.jpg` captures the result. The two added frontend tests cover summaries, retained JSON, and test/unknown/blocked payment distinctions.
+
+Readability spacing follow-up: summaries are 16px, event headings 18px, timestamps 13px, and view buttons 14px. Source labels have their own line, entries have larger gaps, and prose has a readable line length. Desktop Passport capture: `readable-passport-large.jpg`. At 390px the document width remained 390px; all 12 frontend tests passed.

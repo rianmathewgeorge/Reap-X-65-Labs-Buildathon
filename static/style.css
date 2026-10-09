@@ -844,6 +844,10 @@ dd{
 .passport{
   margin-top:18px
 }
+.passport-head p:not(.eyebrow){
+  font-size:14px;
+  line-height:1.6
+}
 .tablist{
   display:flex;
   gap:2px;
@@ -853,10 +857,10 @@ dd{
 }
 .tablist button{
   min-height:44px;
-  padding:5px 8px;
+  padding:8px 12px;
   color:#6b625b;
   background:transparent;
-  font-size:9px
+  font-size:14px
 }
 .tablist button[aria-pressed=true]{
   color:#2e2722;
@@ -872,7 +876,7 @@ dd{
 }
 .timeline li{
   position:relative;
-  padding:0 0 15px 21px
+  padding:0 0 28px 28px
 }
 .timeline li::before{
   content:"";
@@ -894,25 +898,32 @@ dd{
   border-left:1px solid #ddd6cf
 }
 .evidence-source{
-  display:inline-block;
-  margin-right:5px;
+  display:block;
+  margin-bottom:8px;
   color:#6a5d50;
-  font:700 8px ui-monospace,SFMono-Regular,Menlo,monospace
+  font-family:inherit;
+  font-weight:600;
+  font-size:12px;
+  line-height:1.5
 }
 .timeline strong{
-  font-size:10px
+  display:block;
+  font-size:18px;
+  line-height:1.4
 }
 .timeline .event-summary{
-  margin:8px 0 0;
-  color:var(--muted);
-  font-size:12px;
-  line-height:1.6
+  margin:12px 0 0;
+  color:var(--ink);
+  font-size:16px;
+  line-height:1.7;
+  max-width:65ch
 }
 .timeline small{
   display:block;
-  margin-top:2px;
+  margin-top:6px;
   color:var(--muted);
-  font-size:9px
+  font-size:13px;
+  line-height:1.5
 }
 .timeline pre,.passport-json{
   overflow-wrap:anywhere;
