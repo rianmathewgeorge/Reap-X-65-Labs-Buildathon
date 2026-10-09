@@ -1,13 +1,83 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SpendPilot</title><link rel="stylesheet" href="/static/style.css"></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#071b3a">
+  <title>SpendPilot | Procurement cockpit</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
 <body>
-  <main>
-    <header><div><p class="eyebrow">HARBOUR STUDIO <span>SANDBOX</span></p><h1>SpendPilot <small>Equip a new teammate</small></h1></div><p id="mode" class="mode">Checking readiness…</p></header>
-    <section class="scope" aria-labelledby="scope-title"><div><p class="eyebrow">Stage A</p><h2 id="scope-title">Confirm the trusted scope</h2><p>One server-approved item only. The browser cannot set merchant, enrollment, quote, budget, or checkout URL.</p></div><dl><div><dt>Per checkout</dt><dd id="per-checkout">Loading…</dd></div><div><dt>Run budget left</dt><dd id="run-budget">Loading…</dd></div><div><dt>Merchant</dt><dd id="merchant">Loading…</dd></div><div><dt>Market</dt><dd id="market">Loading…</dd></div></dl></section>
-    <section class="card" aria-labelledby="request-title"><p class="eyebrow">Start a run</p><h2 id="request-title">Ask for the approved item</h2><label for="request">Procurement request</label><textarea id="request" rows="4">Find one approved USB-C hub for our new employee, within S$100 total including delivery. Show me the quote before checkout.</textarea><label class="check"><input id="scope-confirm" type="checkbox"> I confirm the displayed trusted scope for this run.</label><button id="start" disabled>Start policy check</button><p id="request-status" class="status" aria-live="polite"></p></section>
-    <section id="discovery" class="card hidden" aria-labelledby="discover-title"><p class="eyebrow">Stage B</p><h2 id="discover-title">Agent search and approval</h2><div id="tools" class="tools"></div><div id="quote"></div><div id="rules"></div><button id="checkout" class="accent hidden">Prepare checkout &amp; review on Reap</button><button id="refresh" class="secondary hidden">Refresh Reap status</button><p id="checkout-status" class="status" aria-live="polite"></p></section>
-    <section id="passport" class="card hidden" aria-labelledby="passport-title"><p class="eyebrow">Stage C</p><h2 id="passport-title">Purchase Decision Passport</h2><ol id="timeline"></ol></section>
-    <section class="card demo"><h2>Blocked-purchase demonstration</h2><p>In policy-test mode, request <q>two USB-C hubs</q>. The server blocks it before checkout and the Passport labels the fixture evidence <code>POLICY_TEST</code>.</p></section>
-  </main><script src="/static/app.js"></script>
-</body></html>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="SpendPilot home"><span class="brand-mark" aria-hidden="true">S</span><span>SpendPilot</span></a>
+      <div class="topbar-copy"><p>Procurement cockpit</p><span>Equip a new teammate</span></div>
+      <div class="environment"><span class="static-sandbox">SANDBOX</span><span class="environment-dot" aria-hidden="true"></span><span id="mode">Checking readiness</span></div>
+    </header>
+
+    <section class="welcome" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">HARBOUR STUDIO · CONTROLLED PURCHASE</p>
+        <h1 id="page-title">Equip your team. Stay in control.</h1>
+        <p class="lede">One approved USB-C hub. A quote you can inspect. A purchase you approve.</p>
+      </div>
+      <div class="current-step" aria-label="Current workflow step"><span id="current-step-number" class="step-number">1</span><span><strong id="current-step">Confirm request</strong><small id="current-step-detail">Loading the purchase controls</small></span></div>
+    </section>
+
+    <nav class="progress-rail" aria-label="Purchase workflow">
+      <div data-step="1" class="is-current">Confirm</div><div data-step="2">Review quote</div><div data-step="3">Reap approval</div><div data-step="4">Outcome</div>
+    </nav>
+
+    <div id="restored-run" class="restored-run hidden" role="status">
+      <div><strong id="run-title">Saved purchase restored</strong><span id="run-detail">Review this saved request or choose an explicit next action.</span></div>
+      <button id="new-request" class="button-quiet" type="button">Start new request</button>
+    </div>
+
+    <div class="workspace">
+      <aside class="sidebar" aria-label="Purchase controls">
+        <section class="scope-panel scope-sidebar" aria-labelledby="scope-title">
+          <div class="section-heading"><p class="eyebrow">TRUSTED SCOPE</p><h2 id="scope-title">Your spending limits</h2><p>One hub, within your approved budget.</p></div>
+          <dl class="scope-grid"><div><dt>Per checkout</dt><dd id="per-checkout">Loading…</dd></div><div><dt>Run budget left</dt><dd id="run-budget">Loading…</dd></div><div><dt>Approved merchant</dt><dd id="merchant">Loading…</dd></div><div><dt>Market</dt><dd id="market">Loading…</dd></div></dl>
+        </section>
+        <section class="budget-card">
+          <p class="eyebrow">RUN CONTROL</p><h2>Budget position</h2>
+          <div class="budget-value"><span id="sidebar-budget">—</span><small>available to reserve</small></div>
+          <div class="budget-meter" aria-hidden="true"><span id="budget-meter"></span></div>
+          <dl class="budget-breakdown"><div><dt>Reserved</dt><dd id="reserved-budget">—</dd></div><div><dt>Completed</dt><dd id="completed-budget">—</dd></div></dl>
+          <p id="budget-note" class="sidebar-note">Loading trusted budget…</p>
+        </section>
+        <section class="guard-card"><span class="guard-icon" aria-hidden="true">✓</span><div><h2>Human approval stays in control</h2><p>Preparing a checkout is a separate, explicit choice. A page load never initiates one.</p></div></section>
+      </aside>
+      <div class="primary-column">
+        <section id="composer" class="panel composer" aria-labelledby="request-title">
+          <div class="section-heading"><p class="eyebrow">1 · CONFIRM</p><h2 id="request-title">Describe the equipment need</h2><p>We will compare it with your approved limits before showing a quote.</p></div>
+          <label for="request">Procurement request</label>
+          <textarea id="request" rows="4">Find one approved USB-C hub for our new employee, within S$100 total including delivery. Show me the quote before checkout.</textarea>
+          <label class="scope-check" for="scope-confirm"><input id="scope-confirm" type="checkbox"><span>I confirm the trusted scope in Your spending limits for this run.</span></label>
+          <div class="action-row"><button id="start" class="button-primary" type="button" disabled>Find the approved quote <span aria-hidden="true">→</span></button><p id="request-status" class="status" aria-live="polite"></p></div>
+        </section>
+
+        <section id="discovery" class="panel hidden" aria-labelledby="review-title">
+          <div class="section-heading split-heading"><div><p class="eyebrow">2 · REVIEW QUOTE</p><h2 id="review-title">Decision workspace</h2><p id="review-summary">Your quote, checks, and next step in one place.</p></div><span id="request-state" class="state-pill">Awaiting review</span></div>
+          <div id="tools" class="tool-strip" aria-label="Executed tools"></div>
+          <div id="quote"></div>
+          <div class="rules-heading"><h3>Policy checks</h3><p>Required checks protect your spending limits.</p></div>
+          <div id="rules" class="rules" aria-live="polite"></div>
+          <div id="checkout-status" class="outcome" aria-live="polite"></div>
+          <div class="action-row review-actions"><button id="checkout" class="button-primary hidden" type="button">Prepare checkout &amp; review on Reap <span aria-hidden="true">→</span></button><button id="resume-approval" class="button-primary hidden" type="button">Resume Reap approval <span aria-hidden="true">↗</span></button><button id="refresh" class="button-secondary hidden" type="button">Refresh status</button></div>
+        </section>
+
+        <section id="passport" class="panel passport hidden" aria-labelledby="passport-title">
+          <div class="section-heading"><p class="eyebrow">DECISION PASSPORT</p><h2 id="passport-title">Recorded evidence</h2><p>A compact source-labelled record of this request. Hosted approval links and sensitive values are not included.</p></div>
+          <ol id="timeline" class="timeline"></ol>
+        </section>
+      </div>
+
+
+    </div>
+
+    <footer id="demo-hint" class="demo-hint hidden"><strong>Policy-test fixture</strong><span>Try “two USB-C hubs” to see a server-blocked request. This demo never creates a real Reap approval or payment.</span></footer>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

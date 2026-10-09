@@ -33,6 +33,7 @@ Run checks with:
 ```sh
 .venv/bin/pytest -q
 .venv/bin/python -m compileall -q app
+node --test tests/frontend.test.cjs
 ```
 
 ## Live Reap handoff
