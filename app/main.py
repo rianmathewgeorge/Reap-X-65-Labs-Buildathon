@@ -54,6 +54,32 @@ def _live_adapter() -> Any | None:
     return ReapAdapter()
 
 
+def _local_payment_return_url(value: str, origin: str) -> bool:
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return False
+    return value == f"{origin}/payment/return" and parts.path == "/payment/return"
+
+
+def _public_payment_return_url(value: str) -> bool:
+    try:
+        parts = urlsplit(value)
+        parts.port
+    except ValueError:
+        return False
+    return (
+        parts.scheme == "https"
+        and bool(parts.hostname)
+        and not parts.username
+        and not parts.password
+        and parts.path == "/payment/return"
+        and not parts.query
+        and not parts.fragment
+        and urlsplit(value)._replace(query="", fragment="").geturl() == value
+    )
+
+
 def _public_attempt(attempt: dict[str, Any] | None) -> dict[str, Any] | None:
     if not attempt:
         return None
@@ -83,9 +109,12 @@ def create_app(*, storage_path: str | None = None, adapter: Any | None = None, m
     if parsed.hostname not in {"127.0.0.1", "localhost", "::1"} or parsed.scheme != "http" or parsed.path or parsed.query or parsed.fragment or parsed.username:
         raise RuntimeError("this single-operator demo requires a loopback HTTP origin")
     app.state.origin = origin
-    return_url = os.getenv("REAP_RETURN_URL", origin + "/payment/return")
-    if urlsplit(return_url)._replace(path="", query="", fragment="").geturl() != origin or urlsplit(return_url).path != "/payment/return":
-        raise RuntimeError("REAP_RETURN_URL must use the configured local /payment/return route")
+    local_return_url = origin + "/payment/return"
+    return_url = os.getenv("REAP_RETURN_URL", local_return_url) if selected_mode == "live" else local_return_url
+    if selected_mode == "live" and reap is not None and not _public_payment_return_url(return_url):
+        raise RuntimeError("live Reap callbacks require a clean HTTPS /payment/return URL")
+    if selected_mode == "live" and reap is None and not (_public_payment_return_url(return_url) or _local_payment_return_url(return_url, origin)):
+        raise RuntimeError("REAP_RETURN_URL must be a clean HTTPS or configured local /payment/return route")
     app.state.checkout = CheckoutService(storage, reap, selected_mode, return_url)
 
     @app.middleware("http")

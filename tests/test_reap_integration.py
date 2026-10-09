@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -12,11 +13,39 @@ from app.reap_client import ReapClient
 
 
 ORIGIN = "http://127.0.0.1:8000"
+CALLBACK = "https://relay.example.test/payment/return"
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def fixture(name: str) -> dict:
     return json.loads((FIXTURES / name).read_text())
+
+
+@pytest.mark.parametrize("return_url", [
+    "http://relay.example.test/payment/return",
+    "https://relay.example.test/not-payment-return",
+    "https://relay.example.test/payment/return?state=provider",
+    "https://user@relay.example.test/payment/return",
+    "https://relay.example.test/payment/return#fragment",
+])
+def test_live_config_rejects_unclean_public_callback(tmp_path, monkeypatch, return_url):
+    monkeypatch.setenv("SPENDPILOT_ORIGIN", ORIGIN)
+    monkeypatch.setenv("REAP_RETURN_URL", return_url)
+    with pytest.raises(RuntimeError, match="clean HTTPS"):
+        create_app(storage_path=str(tmp_path / "live.db"), adapter=object(), mode="live")
+
+
+def test_live_without_adapter_allows_a_future_clean_public_callback(tmp_path, monkeypatch):
+    for key in ("REAP_API_KEY", "REAP_BASE_URL", "REAP_VERSION", "REAP_ENROLLMENT_ID", "REAP_MERCHANT_KEY", "REAP_TRUSTED_OWNER_ID"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("SPENDPILOT_ORIGIN", ORIGIN)
+    monkeypatch.setenv("REAP_RETURN_URL", CALLBACK)
+    app = create_app(storage_path=str(tmp_path / "live.db"), mode="live")
+    try:
+        assert app.state.checkout.return_url == CALLBACK
+        assert app.state.adapter is None
+    finally:
+        app.state.storage.connection.close()
 
 
 def test_live_routes_use_one_guarded_reap_checkout_and_block_quantity_two(tmp_path, monkeypatch):
@@ -29,7 +58,7 @@ def test_live_routes_use_one_guarded_reap_checkout_and_block_quantity_two(tmp_pa
         "REAP_ENROLLMENT_ID": "enrollment_sanitized",
         "REAP_MERCHANT_KEY": "UGREEN SG",
         "REAP_TRUSTED_OWNER_ID": "trusted-owner",
-        "REAP_RETURN_URL": f"{ORIGIN}/payment/return",
+        "REAP_RETURN_URL": CALLBACK,
         "SPENDPILOT_ORIGIN": ORIGIN,
     }.items():
         monkeypatch.setenv(key, value)
@@ -87,7 +116,7 @@ def test_live_routes_use_one_guarded_reap_checkout_and_block_quantity_two(tmp_pa
             assert checkout_body["quoteId"] == "quote_sanitized"
             assert checkout_body["enrollmentId"] == "enrollment_sanitized"
             assert checkout_body["presentation"]["type"] == "REDIRECT"
-            assert checkout_body["presentation"]["returnUrl"].startswith(f"{ORIGIN}/payment/return?state=")
+            assert checkout_body["presentation"]["returnUrl"].startswith(f"{CALLBACK}?state=")
             assert checkout_posts[0].headers["idempotency-key"] == app.state.storage.request(request_id)["attempt"]["idempotency_key"]
 
             duplicate = client.post(f"/api/requests/{request_id}/checkout", json={"confirm": True}, headers=auth)

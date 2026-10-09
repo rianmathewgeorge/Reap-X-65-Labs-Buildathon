@@ -48,8 +48,17 @@ REAP_VERSION=2025-02-14
 REAP_ENROLLMENT_ID=...
 REAP_MERCHANT_KEY=...
 REAP_TRUSTED_OWNER_ID=...
-REAP_RETURN_URL=http://127.0.0.1:8000/payment/return
+REAP_RETURN_URL=https://YOUR_TUNNEL_HOST/payment/return
 ```
+
+Reap requires a public HTTPS return URL, while the demo app remains loopback-only. Point an HTTPS tunnel at `127.0.0.1:8001`, then run the relay with the exact public tunnel host:
+
+```sh
+cloudflared tunnel --url http://127.0.0.1:8001 --no-autoupdate
+SPENDPILOT_ORIGIN=http://127.0.0.1:8000 .venv/bin/python -m scripts.callback_relay --public-host YOUR_TUNNEL_HOST --port 8001
+```
+
+Use the host shown by `cloudflared` in both commands and in `REAP_RETURN_URL`. Quick tunnel URLs are ephemeral, and the browser that completes approval must be able to reach the same machine running the local app. The relay only accepts that `Host` header, forwards one opaque checkout `state` to the local `/payment/return` route, and discards all other provider parameters. It also accepts `/enrollment/return` and redirects locally without provider parameters. Use `https://YOUR_TUNNEL_HOST/enrollment/return` only when creating an external enrollment.
 
 If the Reap adapter or any required live setting is absent, live discovery fails closed. No fixture fallback is used for a live request. The optional OpenAI intent call is used only when `OPENAI_API_KEY` works; it may produce a restricted USB-C-hub search query, never merchant, budget, enrollment, quantity, or checkout authority. An invalid or unavailable model response uses the visibly labelled rule-based fallback.
 
@@ -64,7 +73,7 @@ For a shipping-required live candidate, configure `SPENDPILOT_SHIPPING_ADDRESS_J
 
 The adapter currently uses Reap's exact returned merchant name as `merchant_key` when no stable merchant identifier is present. This is a weaker identity signal, so `REAP_MERCHANT_KEY` must be the exact canonical name confirmed by the sandbox record.
 
-Current live blocker: no Reap credentials, confirmed sandbox host/version, enrollment, or canonical merchant mapping are configured in this environment. Do not claim sandbox search, checkout, or completion until organiser-provided credentials and Reap responses confirm them.
+Live readiness requires confirmed sandbox credentials, host/version, enrollment, canonical merchant mapping, and the HTTPS relay described above. Do not claim sandbox search, checkout, or completion until Reap responses confirm them.
 
 Each mode uses a separate database by default (`spendpilot-live.db` and `spendpilot-policy_test.db`). `SPENDPILOT_DB_PATH` may select another file. A changed trusted configuration requires a separate database and explicit new confirmation; never discard an existing live database to recover an uncertain checkout. Inspect retained attempts and use the same persisted operation/key only after Reap's retry protocol is confirmed. Fixture catalogs exist only in process memory; after restart, create a new fixture request rather than reusing an old quote.
 
@@ -72,7 +81,7 @@ The optional model receives only allowlisted procurement keywords, not raw user 
 
 `checkout_created: null` means a POST may have been submitted but the outcome is unknown. Only a backend-blocked result with `checkout_created: false` proves no checkout call occurred. Completed status and settlement are separate: a COMPLETED response without a valid actual SGD amount keeps its reservation and suspends purchases.
 
-The local authorization guard rejects non-loopback clients, unexpected Host/Origin values, and POSTs without a server-known session and CSRF token. Do not expose this app publicly. The callback correlates an opaque stored state and always retrieves status through the adapter. If hosted redirects to loopback are unsupported by team setup, that is an integration blocker; this demo does not weaken its local guard.
+The local authorization guard rejects non-loopback clients, unexpected Host/Origin values, and POSTs without a server-known session and CSRF token. Do not expose this app publicly. The callback relay correlates an opaque stored state and the app always retrieves status through the adapter. The relay does not weaken the local guard.
 
 With configured sandbox values, start with the read-only enrollment smoke check:
 
