@@ -81,8 +81,20 @@ function setSelection(id, {writeUrl = false} = {}) {
 
 function clearSelection() {
   requestId = null; activeRecord = null; restored = false; sessionStorage.removeItem("spendpilot_request_id");
+  $("session-id").textContent = "SESSION ID: Awaiting request";
+  $("check-count").classList.add("hidden");
+  $("quote-lock").classList.add("hidden");
+  $("quote-expiry").textContent = "Expiry unknown";
   const url = new URL(location.href); url.searchParams.delete("request_id");
   history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+function selectPassportView(view) {
+  const timeline = view === "timeline";
+  $("timeline").classList.toggle("hidden", !timeline);
+  $("passport-json").classList.toggle("hidden", timeline);
+  $("timeline-tab").setAttribute("aria-pressed", String(timeline));
+  $("json-tab").setAttribute("aria-pressed", String(!timeline));
 }
 
 function showComposer(show) {
@@ -102,18 +114,33 @@ function setOutcome(title, detail, kind = "") {
 function showRules(rules = []) {
   const container = $("rules"); clear(container);
   const passed = rules.filter(rule => rule.outcome === "PASS").length;
+  $("rules-total").textContent = rules.length ? `${passed} / ${rules.length} PASS` : "NOT EVALUATED";
+  $("check-count").textContent = rules.length ? `${passed}/${rules.length} checks ${validRules(rules) ? "pass" : "review"}` : "";
+  $("check-count").classList.toggle("hidden", !rules.length);
   container.append(text("p", rules.length ? `${passed} of ${rules.length} required checks passed` : "Policy checks have not been verified for this state.", `policy-summary ${validRules(rules) ? "pass" : "attention"}`));
   if (!rules.length) return;
-  const details = document.createElement("details"); details.open = !validRules(rules);
-  details.append(text("summary", validRules(rules) ? "View all policy checks" : "Review the checks that need attention"));
-  const list = document.createElement("div"); list.className = "rule-list";
-  rules.forEach((rule) => {
+  const groupRules = (keys) => rules.filter((rule) => keys.includes(rule.rule));
+  const known = new Set(["scope_confirmed", "selected_product_binding", "availability", "valid_quote", "active_trusted_enrollment", "approved_merchant", "market_and_currency", "quote_source", "per_checkout_cap", "run_budget", "no_pending_attempt"]);
+  const additional = rules.filter((rule) => !known.has(rule.rule));
+  const groups = [
+    ["01 / Scope integrity & intent", groupRules(["scope_confirmed", "selected_product_binding", "availability", "valid_quote"])],
+    ["02 / Catalog & merchant governance", groupRules(["active_trusted_enrollment", "approved_merchant", "market_and_currency", "quote_source"])],
+    ["03 / Fiscal thresholds & replay defense", groupRules(["per_checkout_cap", "run_budget", "no_pending_attempt"])],
+    ["Additional checks", additional]
+  ];
+  groups.forEach(([label, group], groupIndex) => {
+    if (!group.length) return;
+    const section = document.createElement("section"); section.className = `rule-group ${groupIndex === 2 ? "fiscal" : ""}`;
+    section.append(text("h4", label));
+    const list = document.createElement("div"); list.className = "rule-list";
+    group.forEach((rule) => {
     const row = document.createElement("div"); const outcome = String(rule.outcome || "UNKNOWN").toLowerCase();
     row.className = `rule ${outcome}`;
-    row.append(text("b", rule.outcome || "UNKNOWN"), text("strong", ruleNames[rule.rule] || String(rule.rule || "Policy check").replaceAll("_", " ")), text("small", rule.detail || "No further detail."));
+    row.append(text("b", rule.outcome || "UNKNOWN"), text("strong", ruleNames[rule.rule] || String(rule.rule || "Policy check").replaceAll("_", " ")), text("small", rule.detail || "No further detail."), text("em", `rule: ${rule.rule || "unknown"}`));
     list.append(row);
   });
-  details.append(list); container.append(details);
+    section.append(list); container.append(section);
+  });
 }
 
 function showTools(events = []) {
@@ -133,7 +160,7 @@ function showQuote(record) {
   [["Subtotal", record.quote.subtotal_minor], ["Delivery", record.quote.shipping_minor], ["Tax", record.quote.tax_minor], ["Expires", time(record.quote.expires_at)]].forEach(([label, value]) => { const part = text("span", ""); part.append(text("b", `${label}: `), document.createTextNode(label === "Expires" ? value : money(value))); breakdown.append(part); });
   card.append(meta, price, breakdown);
   if (isFixture(record)) card.append(text("p", "POLICY TEST · NOT LIVE REAP", "fixture-label"));
-  card.append(text("p", "Hardware specifications and missing shipping or tax details remain unknown. The final quote total controls the budget.", "unknown-note"));
+  card.append(text("p", "Hardware specifications and any missing delivery or tax details remain unverified. The final quote total controls the budget.", "unknown-note"));
   quote.append(card);
 }
 
@@ -162,12 +189,15 @@ function showAttempt(record, {nextActionUrl = null, restoredRun = false} = {}) {
 
 function renderRecord(record, options = {}) {
   activeRecord = record;
+  $("session-id").textContent = requestId ? `SESSION ID: ${requestId.slice(0, 8)}` : "SESSION ID: Awaiting request";
   $("discovery").classList.remove("hidden");
   $("request-state").textContent = stateLabel(record.state);
   $("request-state").className = `state-pill ${stateClass(record.state)}`.trim();
   $("review-summary").textContent = eligible(record) ? "The quote meets every current policy check. You still choose whether to prepare a Reap approval." : "The latest persisted evidence for this request.";
   showTools(options.toolEvents || []); showQuote(record); showRules(record.rule_results || []); setOutcome("", "");
   $("checkout").classList.toggle("hidden", !eligible(record));
+  $("quote-lock").classList.toggle("hidden", !eligible(record));
+  $("quote-expiry").textContent = record.quote?.expires_at ? `Expires ${time(record.quote.expires_at)}` : "Expiry unavailable";
   $("refresh").classList.toggle("hidden", !record.attempt);
   $("resume-approval").classList.add("hidden");
   showAttempt(record, options);
@@ -189,6 +219,7 @@ async function showPassport(id = requestId) {
     if (event.payload && typeof event.payload === "object") { const details = document.createElement("details"); details.append(text("summary", "View recorded evidence"), text("pre", JSON.stringify(event.payload, null, 2))); item.append(details); }
     timeline.append(item);
   });
+  $("passport-json").textContent = JSON.stringify({request_id: passport.request_id, state: passport.state, mode: passport.mode, fixture_notice: passport.fixture_notice, events: passport.events}, null, 2);
 }
 
 function renderScope(value) {
@@ -199,9 +230,15 @@ function renderScope(value) {
   $("market").textContent = `${value.market || "Unknown"} · ${value.currency || "Unknown"}`;
   $("sidebar-budget").textContent = money(value.budget?.available_minor);
   $("reserved-budget").textContent = money(value.budget?.reserved_minor);
+  $("budget-reserved-card").textContent = money(value.budget?.reserved_minor);
   $("completed-budget").textContent = money(value.budget?.completed_minor);
-  const total = value.budget?.total_budget_minor || 0; const available = value.budget?.available_minor || 0;
-  $("budget-meter").style.width = `${total > 0 ? Math.max(0, Math.min(100, available / total * 100)) : 0}%`;
+  const total = value.budget?.total_budget_minor || 0; const available = value.budget?.available_minor || 0; const committed = Math.max(0, total - available);
+  const usage = total > 0 ? Math.max(0, Math.min(100, Math.round(committed * 1000 / total) / 10)) : 0;
+  $("total-budget").textContent = money(total);
+  $("budget-meter").style.width = `${usage}%`;
+  $("budget-used").textContent = total > 0 ? `Usage: ${usage.toFixed(1)}%` : "Usage unknown";
+  $("budget-headroom").textContent = total > 0 ? `Headroom: ${(100 - usage).toFixed(1)}%` : "Headroom unknown";
+  $("budget-mode").textContent = value.mode === "policy_test" ? "POLICY TEST" : "RECORDED LEDGER";
   $("budget-note").textContent = value.suspended ? "Purchases are suspended while the current record is reviewed." : `S$${((total || 0) / 100).toFixed(2)} total run limit`;
   $("mode").textContent = value.mode === "policy_test" ? "Policy test · not live Reap" : "Live Reap sandbox";
   $("demo-hint").classList.toggle("hidden", value.mode !== "policy_test");
@@ -233,6 +270,8 @@ async function requestCheckout() {
 }
 
 $("scope-confirm").addEventListener("change", syncControls);
+$("timeline-tab").addEventListener("click", () => selectPassportView("timeline"));
+$("json-tab").addEventListener("click", () => selectPassportView("json"));
 $("start").addEventListener("click", () => busy(async () => {
   if (!scope?.enrollment_ready || scope.suspended || requestId || !$("scope-confirm").checked) return;
   $("request-status").textContent = "Saving your confirmed request…";

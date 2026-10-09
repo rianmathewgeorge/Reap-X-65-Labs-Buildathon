@@ -110,5 +110,38 @@ test('starting a new request clears old callback selection without a POST', asyn
   assert.equal(location.search, '');
   assert.equal(nodes.composer.classList.contains('hidden'), false);
   assert.equal(nodes['scope-confirm'].checked, false);
+  assert.equal(nodes['session-id'].textContent, 'SESSION ID: Awaiting request');
+  assert.equal(nodes['check-count'].classList.contains('hidden'), true);
   assert.ok(calls.every(call => call.method === 'GET'));
+});
+
+test('command budget uses committed amount and policy display counts every outcome', async () => {
+  const rules = [
+    {rule: 'scope_confirmed', outcome: 'PASS'}, {rule: 'selected_product_binding', outcome: 'PASS'},
+    {rule: 'per_checkout_cap', outcome: 'PASS'}, {rule: 'run_budget', outcome: 'UNKNOWN'}
+  ];
+  const commandScope = {...scope, budget: {total_budget_minor: 20000, available_minor: 12710, reserved_minor: 7290, completed_minor: 0}};
+  const {nodes} = await boot({record: {...quoted('QUOTED'), rule_results: rules}, readyScope: commandScope});
+  assert.match(nodes['budget-used'].textContent, /36\.5%/);
+  assert.match(nodes['budget-headroom'].textContent, /63\.5%/);
+  assert.match(nodes['rules-total'].textContent, /3 \/ 4/);
+  assert.match(nodes['check-count'].textContent, /3\/4 checks review/);
+  assert.equal(nodes.checkout.classList.contains('hidden'), true);
+});
+
+test('recorded JSON is a local safe view switch with no network call', async () => {
+  const {nodes, calls} = await boot({record: quoted()});
+  const before = calls.length;
+  nodes['json-tab'].listeners.click();
+  assert.equal(nodes.timeline.classList.contains('hidden'), true);
+  assert.equal(nodes['passport-json'].classList.contains('hidden'), false);
+  assert.equal(nodes['json-tab'].attributes['aria-pressed'], 'true');
+  assert.equal(calls.length, before);
+});
+
+test('quote leaves missing quote metadata visibly unknown', async () => {
+  const {nodes} = await boot({record: quoted()});
+  assert.match(nodes.quote.textContent, /Delivery:\s+Unknown/);
+  assert.match(nodes.quote.textContent, /Tax:\s+Unknown/);
+  assert.match(nodes.quote.textContent, /remain unverified/);
 });
