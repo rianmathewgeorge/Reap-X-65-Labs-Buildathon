@@ -1,0 +1,11 @@
+{
+  "products": [
+    {
+      "id": "prd_sanitized_hub",
+      "name": "Sanitized USB-C Hub",
+      "merchant": {"name": "UGREEN SG"},
+      "available": true,
+      "defaultVariant": {"id": "var_sanitized_hub", "available": true}
+    }
+  ]
+}

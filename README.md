@@ -6,10 +6,10 @@ SpendPilot is the narrow Reap x 65labs sandbox demo for Harbour Studio: one trus
 
 Start both workstreams from shared commit `6faf1f0`.
 
-- `feat/reap-rian` owns the normalized `ReapAdapter` and controlled smoke tooling.
+- Rian's normalized `ReapAdapter` and controlled smoke tooling from `origin/rian` commit `fa662fd` are merged here.
 - `feat/product-pankaj` owns this policy, UI, and server guard layer.
 
-Merge Rian's tested adapter as soon as there is a real sandbox quote. Do not commit `.env`, Reap keys, hosted approval URLs, raw response bodies, addresses, or card data.
+Do not commit `.env`, Reap keys, hosted approval URLs, raw response bodies, addresses, or card data.
 
 ## Install and run
 
@@ -38,7 +38,7 @@ node --test tests/frontend.test.cjs
 
 ## Live Reap handoff
 
-Rian's merge must export `app.reap_adapter.ReapAdapter` with the contract from `00_SHARED_CONTRACT.md`. The application calls only its normalized methods. Set these values in the process environment, not in a committed file:
+The merged `app.reap_adapter.ReapAdapter` exposes the contract from `00_SHARED_CONTRACT.md`; the application calls only its normalized methods. Live use still needs the organiser-provided sandbox configuration below, set in the process environment and never committed:
 
 ```sh
 SPENDPILOT_MODE=live
@@ -62,7 +62,9 @@ For a shipping-required live candidate, configure `SPENDPILOT_SHIPPING_ADDRESS_J
 - The Passport contains only source-labelled, persisted safe events. It excludes hosted action URLs, API credentials, raw evidence, synthetic addresses, and payment details.
 - SQLite reservation locking is suitable for the one-worker buildathon demo only. It needs shared transactional storage before multi-worker deployment.
 
-Current live blocker: no Reap credentials, base host, version, enrollment, or verified merchant are configured in this environment. Do not claim sandbox search, checkout, or completion until organiser-provided credentials and Reap responses confirm them.
+The adapter currently uses Reap's exact returned merchant name as `merchant_key` when no stable merchant identifier is present. This is a weaker identity signal, so `REAP_MERCHANT_KEY` must be the exact canonical name confirmed by the sandbox record.
+
+Current live blocker: no Reap credentials, confirmed sandbox host/version, enrollment, or canonical merchant mapping are configured in this environment. Do not claim sandbox search, checkout, or completion until organiser-provided credentials and Reap responses confirm them.
 
 Each mode uses a separate database by default (`spendpilot-live.db` and `spendpilot-policy_test.db`). `SPENDPILOT_DB_PATH` may select another file. A changed trusted configuration requires a separate database and explicit new confirmation; never discard an existing live database to recover an uncertain checkout. Inspect retained attempts and use the same persisted operation/key only after Reap's retry protocol is confirmed. Fixture catalogs exist only in process memory; after restart, create a new fixture request rather than reusing an old quote.
 
@@ -72,4 +74,10 @@ The optional model receives only allowlisted procurement keywords, not raw user 
 
 The local authorization guard rejects non-loopback clients, unexpected Host/Origin values, and POSTs without a server-known session and CSRF token. Do not expose this app publicly. The callback correlates an opaque stored state and always retrieves status through the adapter. If hosted redirects to loopback are unsupported by team setup, that is an integration blocker; this demo does not weaken its local guard.
 
-Before joint validation, Rian must supply the tested adapter constructor (currently expected as `ReapAdapter()`), confirmed host/version, exact canonical merchant and trusted owner/enrollment mapping, synthetic shipping requirements, and a redacted real quote transcript. Run the full `pytest -q` including his adapter tests after merge. Then perform hosted human approval and confirm COMPLETED via status lookup, followed by an independent blocked request.
+With configured sandbox values, start with the read-only enrollment smoke check:
+
+```sh
+.venv/bin/python -m scripts.reap_smoke --stage enrollment --enrollment-id "$REAP_ENROLLMENT_ID"
+```
+
+Before joint validation, confirm the supported host/version, exact canonical merchant and trusted owner/enrollment mapping, synthetic shipping requirements, and a redacted real quote transcript. Run the full `pytest -q`, then perform hosted human approval and confirm COMPLETED via status lookup, followed by an independent blocked request.
