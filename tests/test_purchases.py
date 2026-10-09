@@ -40,6 +40,52 @@ def checkout(client, auth, request_id):
     return response.json()
 
 
+def test_policy_test_outcomes_settle_or_release_the_existing_reservation(demo):
+    app, adapter, client, auth = demo
+    success_id, _ = quoted(client, auth)
+    checkout(client, auth, success_id)
+    success = client.post(f"/api/requests/{success_id}/policy-test-outcome", json={"outcome": "COMPLETED"}, headers=auth)
+    assert success.status_code == 200
+    assert success.json()["fixture_notice"] == "POLICY TEST - SIMULATED OUTCOME; NO REAL PAYMENT"
+    assert success.json()["attempt"]["settlement_state"] == "SETTLED"
+    assert success.json()["attempt"]["final_amount_minor"] == 7290
+    assert app.state.storage.budget_snapshot()["completed_minor"] == 7290
+    assert any(event["source"] == "POLICY_TEST" and event["event_type"] == "checkout_status_refreshed" for event in app.state.storage.events(success_id))
+
+    failure_id, _ = quoted(client, auth)
+    checkout(client, auth, failure_id)
+    failure = client.post(f"/api/requests/{failure_id}/policy-test-outcome", json={"outcome": "FAILED"}, headers=auth)
+    assert failure.status_code == 200
+    assert failure.json()["attempt"]["settlement_state"] == "RELEASED"
+    budget = app.state.storage.budget_snapshot()
+    assert budget["reserved_minor"] == 0 and budget["completed_minor"] == 7290
+
+
+def test_policy_test_outcome_rejects_invalid_missing_and_replayed_attempts(demo):
+    app, adapter, client, auth = demo
+    request_id = client.post("/api/requests", json={"text": "USB-C hub"}, headers=auth).json()["request_id"]
+    assert client.post(f"/api/requests/{request_id}/policy-test-outcome", json={"outcome": "COMPLETED"}, headers=auth).status_code == 409
+    request_id, _ = quoted(client, auth)
+    checkout(client, auth, request_id)
+    assert client.post(f"/api/requests/{request_id}/policy-test-outcome", json={"outcome": "UNKNOWN"}, headers=auth).status_code == 422
+    assert client.post(f"/api/requests/{request_id}/policy-test-outcome", json={"outcome": "COMPLETED", "extra": True}, headers=auth).status_code == 422
+    assert client.post(f"/api/requests/{request_id}/policy-test-outcome", json={"outcome": "COMPLETED"}, headers=auth).status_code == 200
+    assert client.post(f"/api/requests/{request_id}/policy-test-outcome", json={"outcome": "FAILED"}, headers=auth).status_code == 409
+
+
+def test_policy_test_outcomes_are_unavailable_for_live_or_nonfixture_adapters(tmp_path, monkeypatch):
+    monkeypatch.setenv("REAP_RETURN_URL", "https://demo.invalid/payment/return")
+    for mode, adapter in (("policy_test", object()), ("live", object())):
+        app = create_app(storage_path=str(tmp_path / f"{mode}.db"), adapter=adapter, mode=mode)
+        with TestClient(app, base_url=ORIGIN, client=("127.0.0.1", 50000)) as client:
+            auth = headers(client)
+            request_id = client.post("/api/requests", json={"text": "USB-C hub"}, headers=auth).json()["request_id"]
+            response = client.post(f"/api/requests/{request_id}/policy-test-outcome", json={"outcome": "COMPLETED"}, headers=auth)
+            assert response.status_code == 404
+            assert app.state.storage.request(request_id)["attempt"] is None
+        app.state.storage.connection.close()
+
+
 def test_allowed_and_blocked_passports(demo):
     app, adapter, client, auth = demo
     request_id, discovery = quoted(client, auth)

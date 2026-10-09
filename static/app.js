@@ -19,6 +19,7 @@ const csrf = () => document.cookie.split("; ").find((part) => part.startsWith("s
 const validRules = (rules) => Array.isArray(rules) && rules.length > 0 && rules.every((rule) => rule.outcome === "PASS");
 const eligible = (record = activeRecord) => record?.state === "QUOTED" && validRules(record.rule_results);
 const isFixture = (record = activeRecord) => record?.source_mode === "policy_test" || scope?.mode === "policy_test";
+const canSimulateFixtureOutcome = (record = activeRecord) => isFixture(record) && record?.attempt?.settlement_state === "HELD" && ["REQUIRES_ACTION", "PROCESSING"].includes(record.attempt.checkout_status);
 
 async function api(path, options = {}) {
   const headers = {...(options.headers || {})};
@@ -57,6 +58,8 @@ function syncControls() {
   $("checkout").disabled = inFlight || !ready || !eligible();
   $("refresh").disabled = inFlight || !activeRecord?.attempt;
   $("resume-approval").disabled = inFlight || !scope?.enrollment_ready;
+  $("simulate-success").disabled = inFlight || !canSimulateFixtureOutcome();
+  $("simulate-failure").disabled = inFlight || !canSimulateFixtureOutcome();
   document.body.classList.toggle("is-busy", inFlight);
 }
 
@@ -174,7 +177,9 @@ function showAttempt(record, {nextActionUrl = null, restoredRun = false} = {}) {
   }
   $("refresh").classList.remove("hidden");
   const status = attempt.checkout_status || "UNKNOWN";
-  if (status === "COMPLETED" && record.source_mode === "live") setOutcome("Sandbox checkout completed", `Order ${attempt.order_id || "unknown"}; actual amount ${money(attempt.final_amount_minor)}.`, "is-positive");
+  if (status === "COMPLETED" && isFixture(record)) setOutcome("Simulated success", `No real payment was made. Budget reservation moved to completed: ${money(attempt.final_amount_minor)}.`, "is-positive");
+  else if (status === "COMPLETED" && record.source_mode === "live") setOutcome("Sandbox checkout completed", `Order ${attempt.order_id || "unknown"}; actual amount ${money(attempt.final_amount_minor)}.`, "is-positive");
+  else if (status === "FAILED" && isFixture(record)) setOutcome("Simulated failure", "No real payment was made. The budget reservation was released.", "is-danger");
   else if (status === "UNKNOWN") setOutcome("Checkout status is unknown", "The reservation remains held. Do not start another checkout for this request.", "is-warning");
   else if (status === "REQUIRES_ACTION" && isFixture(record)) setOutcome("Fixture record requires action", "POLICY TEST only. No hosted approval link or payment was created.", "is-warning");
   else if (status === "REQUIRES_ACTION") setOutcome("Approval is required in Reap", nextActionUrl ? "Open the hosted Reap approval when you are ready, then refresh this status." : "No hosted approval link is currently available. Use Resume Reap approval only to retrieve the existing attempt.", "is-warning");
@@ -200,6 +205,8 @@ function renderRecord(record, options = {}) {
   $("quote-expiry").textContent = record.quote?.expires_at ? `Expires ${time(record.quote.expires_at)}` : "Expiry unavailable";
   $("refresh").classList.toggle("hidden", !record.attempt);
   $("resume-approval").classList.add("hidden");
+  $("simulate-success").classList.toggle("hidden", !canSimulateFixtureOutcome(record));
+  $("simulate-failure").classList.toggle("hidden", !canSimulateFixtureOutcome(record));
   showAttempt(record, options);
   const status = record.attempt?.checkout_status || record.state;
   const step = ["REQUIRES_ACTION", "PROCESSING", "UNKNOWN"].includes(status) ? 3 : ["COMPLETED", "FAILED", "EXPIRED"].includes(status) ? 4 : record.state === "QUOTED" || record.state === "BLOCKED" || record.state === "REVIEW_REQUIRED" ? 2 : 1;
@@ -304,6 +311,16 @@ async function requestCheckout() {
   });
 }
 
+async function simulateFixtureOutcome(outcome) {
+  if (!requestId || inFlight || !canSimulateFixtureOutcome()) return;
+  const id = requestId;
+  await busy(async () => {
+    const record = await api(`/api/requests/${id}/policy-test-outcome`, {method: "POST", body: JSON.stringify({outcome})});
+    if (id !== requestId) return;
+    renderRecord(record); await showPassport(id); await loadScope();
+  });
+}
+
 $("scope-confirm").addEventListener("change", syncControls);
 $("timeline-tab").addEventListener("click", () => selectPassportView("timeline"));
 $("json-tab").addEventListener("click", () => selectPassportView("json"));
@@ -325,6 +342,8 @@ $("start").addEventListener("click", () => busy(async () => {
 }));
 $("checkout").addEventListener("click", () => requestCheckout().catch((error) => setOutcome("Checkout could not be prepared", error.message, "is-danger")));
 $("resume-approval").addEventListener("click", () => requestCheckout().catch((error) => setOutcome("Approval could not be resumed", error.message, "is-danger")));
+$("simulate-success").addEventListener("click", () => simulateFixtureOutcome("COMPLETED").catch((error) => setOutcome("Simulation could not be completed", error.message, "is-danger")));
+$("simulate-failure").addEventListener("click", () => simulateFixtureOutcome("FAILED").catch((error) => setOutcome("Simulation could not be completed", error.message, "is-danger")));
 $("refresh").addEventListener("click", () => busy(async () => { if (!requestId) return; const record = await api(`/api/requests/${requestId}/refresh`, {method: "POST", body: "{}"}); renderRecord(record); await showPassport(); await loadScope(); }).catch((error) => setOutcome("Status could not be refreshed", error.message, "is-danger")));
 $("new-request").addEventListener("click", () => { if (inFlight || ["UNKNOWN", "RESERVED"].includes(activeRecord?.attempt?.checkout_status)) return; const uncertain = activeRecord?.attempt?.checkout_status === "UNKNOWN"; clearSelection(); clear($("quote")); clear($("rules")); clear($("tools")); clear($("timeline")); $("discovery").classList.add("hidden"); $("passport").classList.add("hidden"); $("scope-confirm").checked = false; $("request-status").textContent = uncertain ? "The previous reservation remains held. This starts a separate request; it does not retry the uncertain checkout." : ""; showComposer(true); updateJourney(1, "Confirm request", "Review the scope and begin a new request"); $("request").focus(); syncControls(); });
 

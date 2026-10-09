@@ -26,7 +26,7 @@ class Element {
   focus() { this.focused = true; }
 }
 
-async function boot({record, readyScope = scope, failScope = false, failDiscovery = false, passport = {events: [], fixture_notice: 'POLICY TEST'}} = {}) {
+async function boot({record, outcomeRecord = record, readyScope = scope, failScope = false, failDiscovery = false, passport = {events: [], fixture_notice: 'POLICY TEST'}} = {}) {
   const nodes = Object.fromEntries(ids.map(name => [name, new Element()]));
   const rail = Array.from({length: 4}, () => new Element());
   const location = new URL(`http://127.0.0.1:8000/${record ? `?request_id=${id}` : ''}`);
@@ -36,11 +36,12 @@ async function boot({record, readyScope = scope, failScope = false, failDiscover
     sessionStorage: {getItem: key => store.get(key), setItem: (key, value) => store.set(key, value), removeItem: key => store.delete(key)},
     document: {body: new Element(), cookie: 'spendpilot_csrf=fixture-token', getElementById: name => { assert.ok(nodes[name], `missing DOM hook ${name}`); return nodes[name]; }, querySelectorAll: () => rail, createElement: () => new Element(), createTextNode: value => { const node = new Element(); node.textContent = value; return node; }},
     fetch: async (path, options = {}) => {
-      calls.push({path, method: options.method || 'GET'});
+      calls.push({path, method: options.method || 'GET', body: options.body});
       if (path === '/api/scope') { if (failScope) throw new Error('network unavailable'); return {ok: true, json: async () => readyScope}; }
       if (path.endsWith('/passport')) return {ok: true, json: async () => passport};
       if (path.endsWith('/discover') && failDiscovery) throw new Error('network unavailable');
       if (path === '/api/requests') return {ok: true, json: async () => ({request_id: id, state: 'DRAFT'})};
+      if (path.endsWith('/policy-test-outcome')) return {ok: true, json: async () => outcomeRecord};
       return {ok: true, json: async () => record};
     }});
   vm.runInContext(source, context);
@@ -102,6 +103,30 @@ test('discovery network errors remain visible with a saved recoverable request',
 test('fixture completion never claims a real sandbox checkout completed', async () => {
   const {nodes} = await boot({record: {...quoted('COMPLETED'), attempt: {checkout_status: 'COMPLETED', settlement_state: 'SETTLED', final_amount_minor: 7290}}});
   assert.doesNotMatch(nodes['checkout-status'].textContent, /sandbox checkout completed/i);
+});
+
+test('fixture outcome controls appear only for pending fixture records and use the exact outcome endpoint', async () => {
+  const pending = {...quoted('REQUIRES_ACTION'), attempt: {checkout_status: 'REQUIRES_ACTION', settlement_state: 'HELD', final_amount_minor: null}};
+  const success = {...quoted('COMPLETED'), attempt: {checkout_status: 'COMPLETED', settlement_state: 'SETTLED', final_amount_minor: 7290}};
+  const {nodes, calls} = await boot({record: pending, outcomeRecord: success});
+  assert.equal(nodes['simulate-success'].classList.contains('hidden'), false);
+  assert.equal(nodes['simulate-failure'].classList.contains('hidden'), false);
+  await nodes['simulate-success'].listeners.click();
+  const call = calls.find(entry => entry.path.endsWith('/policy-test-outcome'));
+  assert.deepEqual(call, {path: `/api/requests/${id}/policy-test-outcome`, method: 'POST', body: JSON.stringify({outcome: 'COMPLETED'})});
+  assert.match(nodes['checkout-status'].textContent, /simulated success.*no real payment.*completed/i);
+  assert.equal(nodes['simulate-success'].classList.contains('hidden'), true);
+});
+
+test('fixture failure copy says the reservation was released and live records never expose simulation', async () => {
+  const pending = {...quoted('REQUIRES_ACTION'), attempt: {checkout_status: 'REQUIRES_ACTION', settlement_state: 'HELD'}};
+  const failure = {...quoted('FAILED'), attempt: {checkout_status: 'FAILED', settlement_state: 'RELEASED'}};
+  const fixture = await boot({record: pending, outcomeRecord: failure});
+  await fixture.nodes['simulate-failure'].listeners.click();
+  assert.match(fixture.nodes['checkout-status'].textContent, /simulated failure.*no real payment.*reservation was released/i);
+  const live = await boot({record: {...pending, source_mode: 'live'}, readyScope: {...scope, mode: 'live'}});
+  assert.equal(live.nodes['simulate-success'].classList.contains('hidden'), true);
+  assert.equal(live.nodes['simulate-failure'].classList.contains('hidden'), true);
 });
 
 test('starting a new request clears old callback selection without a POST', async () => {

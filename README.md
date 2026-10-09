@@ -26,7 +26,7 @@ For the clearly labelled local fixture demonstration:
 SPENDPILOT_MODE=policy_test .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log --no-proxy-headers
 ```
 
-Open `http://127.0.0.1:8000`. The fixture can produce an allowed quote and a `REQUIRES_ACTION` record, but it never calls Reap and never displays a completed sandbox order. Use the deliberate “two USB-C hubs” request for the backend-blocked demonstration.
+Open `http://127.0.0.1:8000`. The fixture can produce an allowed quote and a `REQUIRES_ACTION` record without calling Reap. For a controlled demo, use **Simulate success** to settle the fixture quote or **Simulate failure** to release its reservation; both are labelled as simulated and never create a payment. Use the deliberate “two USB-C hubs” request for the backend-blocked demonstration. Live Reap enrollment and checkout remain separate and outstanding.
 
 Run checks with:
 

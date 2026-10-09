@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
@@ -14,6 +14,11 @@ class RequestInput(BaseModel):
 class CheckoutInput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     confirm: StrictBool
+
+
+class PolicyTestOutcomeInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    outcome: Literal["COMPLETED", "FAILED"]
 
 
 class RestrictedIntent(BaseModel):

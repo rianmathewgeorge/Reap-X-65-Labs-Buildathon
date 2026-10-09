@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.agent import FakeReapAdapter, discover, safe_candidate, safe_quote
-from app.models import CheckoutInput, RequestInput
+from app.models import CheckoutInput, PolicyTestOutcomeInput, RequestInput
 from app.passport import project_passport
 from app.policy import evaluate_purchase
 from app.purchases import CheckoutService
@@ -223,13 +223,38 @@ def create_app(*, storage_path: str | None = None, adapter: Any | None = None, m
         return {"state": attempt["checkout_status"], "checkout_id": attempt["checkout_id"], "checkout_created": result["created"],
                 "next_action_url": result.get("next_action_url"), "reasons": result["reasons"], "source_mode": selected_mode, "attempt": _public_attempt(attempt)}
 
+    def public_status(request_id: str) -> dict[str, Any]:
+        value = _public_request(storage.request(request_id))
+        evaluations = [event for event in storage.events(request_id) if event["event_type"] == "discovery_evaluated"]
+        value["rule_results"] = evaluations[-1]["payload"]["rules"] if evaluations else []
+        return value
+
+    @app.post("/api/requests/{request_id}/policy-test-outcome")
+    async def policy_test_outcome(request_id: str, payload: PolicyTestOutcomeInput, request: Request) -> dict[str, Any]:
+        guard(request)
+        if selected_mode != "policy_test" or not isinstance(reap, FakeReapAdapter):
+            raise HTTPException(404, "policy-test outcomes are unavailable")
+        try:
+            record = storage.request(request_id)
+        except KeyError as error:
+            raise HTTPException(404, "request not found") from error
+        attempt = record["attempt"]
+        if not attempt or attempt["settlement_state"] != "HELD" or attempt["checkout_status"] not in {"REQUIRES_ACTION", "PROCESSING"}:
+            raise HTTPException(409, "a pending fixture checkout is required")
+        try:
+            reap.set_checkout_outcome(attempt["checkout_id"], payload.outcome)
+        except ValueError as error:
+            raise HTTPException(409, "fixture checkout cannot be updated") from error
+        # Reconciliation owns all ledger and terminal-state handling.
+        await app.state.checkout.reconcile(request_id)
+        value = public_status(request_id)
+        value["fixture_notice"] = "POLICY TEST - SIMULATED OUTCOME; NO REAL PAYMENT"
+        return value
+
     @app.get("/api/requests/{request_id}")
     async def request_status(request_id: str) -> dict[str, Any]:
         try:
-            value = _public_request(storage.request(request_id))
-            evaluations = [event for event in storage.events(request_id) if event["event_type"] == "discovery_evaluated"]
-            value["rule_results"] = evaluations[-1]["payload"]["rules"] if evaluations else []
-            return value
+            return public_status(request_id)
         except KeyError as error:
             raise HTTPException(404, "request not found") from error
 

@@ -27,6 +27,7 @@ class FakeReapAdapter:
         self.create_checkout_calls = 0
         self.checkouts: dict[str, dict[str, Any]] = {}
         self.quotes: dict[str, dict[str, Any]] = {}
+        self.checkout_quotes: dict[str, str] = {}
 
     async def get_enrollment(self, enrollment_id: str) -> dict[str, Any]:
         return {"enrollment_id": enrollment_id, "status": "ACTIVE", "owner_id": "trusted-owner", "next_action_url": None}
@@ -57,14 +58,31 @@ class FakeReapAdapter:
 
     async def create_checkout(self, quote_id: str, enrollment_id: str, return_url: str, idempotency_key: str) -> dict[str, Any]:
         self.create_checkout_calls += 1
+        if quote_id not in self.quotes:
+            raise ValueError("fixture quote is unknown")
         checkout = {"checkout_id": f"fixture-checkout-{idempotency_key[-12:]}", "status": "REQUIRES_ACTION", "next_action_url": None,
                     "order_id": None, "final_amount_minor": None, "currency": "SGD", "raw_evidence": {}}
         self.checkouts[checkout["checkout_id"]] = checkout
+        self.checkout_quotes[checkout["checkout_id"]] = quote_id
         return checkout
 
     async def get_checkout(self, checkout_id: str) -> dict[str, Any]:
         return self.checkouts.get(checkout_id, {"checkout_id": checkout_id, "status": "UNKNOWN", "next_action_url": None,
                                                 "order_id": None, "final_amount_minor": None, "currency": "SGD", "raw_evidence": {}})
+
+    def set_checkout_outcome(self, checkout_id: str, outcome: str) -> None:
+        quote_id = self.checkout_quotes.get(checkout_id)
+        if quote_id is None or checkout_id not in self.checkouts:
+            raise ValueError("fixture checkout is unknown")
+        quote = self.quotes[quote_id]
+        checkout = self.checkouts[checkout_id]
+        if outcome == "COMPLETED":
+            checkout.update(status="COMPLETED", next_action_url=None, order_id=f"fixture-order-{checkout_id[-12:]}",
+                            final_amount_minor=quote["total_minor"], currency=quote["currency"])
+        elif outcome == "FAILED":
+            checkout.update(status="FAILED", next_action_url=None, order_id=None, final_amount_minor=None, currency=quote["currency"])
+        else:
+            raise ValueError("fixture outcome is invalid")
 
 
 def safe_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
